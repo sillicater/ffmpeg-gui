@@ -684,6 +684,13 @@ final class Controller: NSObject, NSWindowDelegate {
   var lastWindowVisible = true
   var autoPaused = false
   var pollMs = 250
+  var pausedNow = false
+  var positionNow = 0.0
+  // 前台播放时持有的防休眠断言
+  var sleepActivity: NSObjectProtocol?
+  // 全屏时自动隐藏鼠标
+  var cursorHideWork: DispatchWorkItem?
+  var cursorHiddenUntilMove = false
 
   init(_ s: Session) {
     session = s
@@ -793,6 +800,10 @@ final class Controller: NSObject, NSWindowDelegate {
                    name: NSWindow.didMiniaturizeNotification, object: window)
     nc.addObserver(self, selector: #selector(windowVisibilityChanged),
                    name: NSWindow.didDeminiaturizeNotification, object: window)
+    nc.addObserver(self, selector: #selector(appActiveChanged),
+                   name: NSApplication.didBecomeActiveNotification, object: nil)
+    nc.addObserver(self, selector: #selector(appActiveChanged),
+                   name: NSApplication.didResignActiveNotification, object: nil)
 
     if session.image == true {
       imageView?.refresh()
@@ -850,8 +861,11 @@ final class Controller: NSObject, NSWindowDelegate {
     lastTracksJSON = ""
     lastChaptersJSON = ""
     autoPaused = false
+    pausedNow = false
+    positionNow = 0
     barVisible = false
     hideWork?.cancel()
+    updateSleepAssertion()
     controlBar.isHidden = true
     slider.maxValue = 1
     slider.doubleValue = 0
@@ -1012,6 +1026,7 @@ final class Controller: NSObject, NSWindowDelegate {
       matching: [.mouseMoved, .leftMouseDragged, .leftMouseDown]
     ) { [weak self] event in
       guard let self, event.window === self.window else { return event }
+      self.mouseActivity()
       self.pointerMoved()
       return event
     }
@@ -1059,6 +1074,42 @@ final class Controller: NSObject, NSWindowDelegate {
     (videoView?.layer as? MPVLayer)?.setNeedsDisplay()
   }
 
+  // ---------- 全屏鼠标自动隐藏 ----------
+  // 鼠标停止移动 1.5 秒后隐藏；控制条还显示时不隐藏，避免看着控件却找不到鼠标。
+  private func mouseActivity() {
+    cursorHiddenUntilMove = false
+    scheduleCursorHide()
+  }
+
+  private func scheduleCursorHide() {
+    cursorHideWork?.cancel()
+    guard let w = window, w.styleMask.contains(.fullScreen), NSApp.isActive else {
+      showCursorNow()
+      return
+    }
+    let work = DispatchWorkItem { [weak self] in
+      guard let self, let w = self.window,
+            w.styleMask.contains(.fullScreen), NSApp.isActive else { return }
+      if self.barVisible {
+        self.scheduleCursorHide()
+        return
+      }
+      NSCursor.setHiddenUntilMouseMoves(true)
+      self.cursorHiddenUntilMove = true
+    }
+    cursorHideWork = work
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5, execute: work)
+  }
+
+  private func showCursorNow() {
+    cursorHideWork?.cancel()
+    cursorHideWork = nil
+    if cursorHiddenUntilMove {
+      NSCursor.setHiddenUntilMouseMoves(false)
+      cursorHiddenUntilMove = false
+    }
+  }
+
   // ---------- 后台省电 ----------
   @objc func windowVisibilityChanged(_ note: Notification) {
     guard let window else { return }
@@ -1070,6 +1121,43 @@ final class Controller: NSObject, NSWindowDelegate {
       imageView?.setAnimating(visible)
     } else {
       setPlaybackSuspended(!visible)
+    }
+    updateSleepAssertion()
+  }
+
+  @objc func appActiveChanged(_ note: Notification) {
+    if note.name == NSApplication.didResignActiveNotification {
+      updateSleepAssertion()
+      showCursorNow()
+    } else {
+      updateSleepAssertion()
+      if window?.styleMask.contains(.fullScreen) == true { scheduleCursorHide() }
+    }
+  }
+
+  // 只有“播放器在前台 + 窗口可见 + 正在播放”才阻止系统/显示器休眠。
+  // 暂停、播放结束、窗口被遮挡、切到别的应用都会释放断言。
+  func updateSleepAssertion() {
+    guard window != nil else { return }
+    let foreground = NSApp.isActive && window.isVisible
+      && !window.isMiniaturized && window.occlusionState.contains(.visible)
+    let atEnd = duration > 0 && positionNow >= duration - 0.05
+    let wanted = foreground && session.image != true && hasStarted && !pausedNow && !atEnd
+    if wanted {
+      if sleepActivity == nil {
+        sleepActivity = ProcessInfo.processInfo.beginActivity(
+          options: [.userInitiated, .idleSystemSleepDisabled, .idleDisplaySleepDisabled],
+          reason: "正在播放媒体")
+      }
+    } else {
+      endSleepActivity()
+    }
+  }
+
+  private func endSleepActivity() {
+    if let a = sleepActivity {
+      ProcessInfo.processInfo.endActivity(a)
+      sleepActivity = nil
     }
   }
 
@@ -1098,10 +1186,14 @@ final class Controller: NSObject, NSWindowDelegate {
   func windowDidEnterFullScreen(_ notification: Notification) {
     layoutViews()
     imageView?.refresh()
+    scheduleCursorHide()
+    updateSleepAssertion()
   }
   func windowDidExitFullScreen(_ notification: Notification) {
     layoutViews()
     imageView?.refresh()
+    showCursorNow()
+    updateSleepAssertion()
   }
 
   // ---------- mpv ----------
@@ -1259,6 +1351,8 @@ final class Controller: NSObject, NSWindowDelegate {
   // 主线程：只碰界面，不碰 mpv
   func applyUI(pos: Double, duration: Double, paused: Bool, volume: Double, tracks: String, chapters: String) {
     self.duration = duration
+    self.positionNow = pos
+    self.pausedNow = paused
     playBtn.title = paused ? "▶" : "❚❚"
     if !dragging {
       slider.maxValue = max(1, duration)
@@ -1268,6 +1362,7 @@ final class Controller: NSObject, NSWindowDelegate {
     if !volSlider.isHighlighted { volSlider.doubleValue = volume }
     if tracks != lastTracksJSON { lastTracksJSON = tracks; rebuildTrackMenus(tracks) }
     if chapters != lastChaptersJSON { lastChaptersJSON = chapters; rebuildChapterMenu(chapters); rebuildMenuBar() }
+    updateSleepAssertion()
   }
 
   // 在后台队列执行 mpv 调用；读到的值在主线程使用
@@ -1528,6 +1623,8 @@ final class Controller: NSObject, NSWindowDelegate {
 
   func windowWillClose(_ notification: Notification) {
     timer?.cancel()
+    showCursorNow()
+    endSleepActivity()
     // 直接退出：mpv 的销毁可能与事件线程互相等待，卡住窗口关不掉
     exit(0)
   }

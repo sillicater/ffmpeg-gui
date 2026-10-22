@@ -9,7 +9,15 @@ macOS 上的本地多媒体转码与查看工具：Electron 主程序负责批�
 - 图片转码：ImageIO 完整解码 HEIC/AVIF，支持 8/10/16 位输出、HDR 增益图、EXIF/GPS 元数据保留。
 - 元数据查看：ffprobe 原始信息 + exiftool 中文翻译（相机、镜头、GPS、色彩空间等）。
 - 原生播放器：libmpv + OpenGL 渲染，HDR/杜比视界 EDR、GIF 动图、缩放/平移、自动隐藏控制条、后台自动暂停。
+- 播放时阻止系统/显示器休眠；全屏时鼠标静止自动隐藏。
 - **独立播放器**：可单独安装为 `多媒体工具播放器.app`，直接接管双击打开，不需要 Electron 主程序。
+
+## 下载
+
+从 [Releases](https://github.com/sillicater/ffmpeg-gui/releases) 下载：
+
+- `多媒体工具-0.1.0-arm64.dmg`：Electron 主程序
+- `多媒体工具播放器-1.0.0.dmg`：仅播放器
 
 ## 环境要求
 
