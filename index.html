@@ -1,0 +1,1001 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' file: data:">
+<title>多媒体工具</title>
+<style>
+  :root {
+    --bg:#f5f5f7; --panel:#fff; --text:#1d1d1f; --muted:#6e6e73; --line:#d2d2d7;
+    --accent:#0071e3; --ok:#1a7f37; --err:#c9302c; --dv:#8e44ad; --hdr:#b7791f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#1c1c1e; --panel:#2c2c2e; --text:#f5f5f7; --muted:#98989d; --line:#3a3a3c;
+      --accent:#0a84ff; --ok:#30d158; --err:#ff453a; --dv:#c678dd; --hdr:#e0a44a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:13px -apple-system,"PingFang SC",sans-serif; background:var(--bg); color:var(--text);
+    display:flex; flex-direction:column; height:100vh; }
+  .bar { display:flex; flex-wrap:wrap; gap:10px; align-items:center; padding:10px 14px;
+    background:var(--panel); border-bottom:1px solid var(--line); }
+  label { display:flex; gap:5px; align-items:center; color:var(--muted); }
+  select,button,input[type=text],input[type=number] { font:inherit; color:var(--text); background:var(--bg);
+    border:1px solid var(--line); border-radius:6px; padding:5px 8px; }
+  button { cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.mini { padding:2px 8px; }
+  button:disabled { opacity:.5; cursor:default; }
+  .spacer { flex:1; }
+  .kind { font-size:12px; color:var(--muted); }
+  .kind b { color:var(--text); }
+  .hidden { display:none !important; }
+  .quick { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .quick label { gap:4px; }
+  .quick select { max-width:230px; }
+  .quick input[type=number] { width:74px; }
+  .quick input[type=text] { width:96px; }
+  .hint { color:var(--muted); font-size:12px; }
+  .adv { display:grid; grid-template-columns:repeat(auto-fill,minmax(185px,1fr)); gap:10px 14px;
+    padding:10px 14px 14px; background:var(--panel); border-bottom:1px solid var(--line); }
+  .adv label { display:flex; flex-direction:column; align-items:stretch; gap:3px; }
+  .adv label.check { flex-direction:row; align-items:center; gap:6px; }
+  .adv label.wide { grid-column:1/-1; }
+  .adv input,.adv select { width:100%; }
+  .adv label.check input { width:auto; }
+  .adv .note { grid-column:1/-1; color:var(--muted); font-size:11px; line-height:1.6; }
+  .wrap { flex:1; display:grid; grid-template-columns: 1fr 380px; min-height:0; }
+  #drop { overflow:auto; border-right:1px solid var(--line); }
+  #drop.over { outline:2px dashed var(--accent); outline-offset:-4px; }
+  #empty { padding:60px 20px; text-align:center; color:var(--muted); line-height:1.8; }
+  .row { padding:10px 14px; border-bottom:1px solid var(--line); cursor:pointer; background:var(--panel); }
+  .row:hover { background:var(--bg); }
+  .row.sel { box-shadow: inset 3px 0 var(--accent); }
+  .row .top { display:flex; gap:8px; align-items:center; }
+  .row .nm { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1; }
+  .badge { font-size:11px; padding:1px 6px; border-radius:4px; border:1px solid; white-space:nowrap; }
+  .b-dv { color:var(--dv); border-color:var(--dv); }
+  .b-hdr { color:var(--hdr); border-color:var(--hdr); }
+  .b-sdr { color:var(--muted); border-color:var(--line); }
+  .b-img { color:var(--accent); border-color:var(--accent); }
+  .b-aud { color:var(--ok); border-color:var(--ok); }
+  .row .sub { color:var(--muted); font-size:12px; margin-top:3px; display:flex; gap:8px; }
+  .row .status { font-size:12px; text-align:right; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .track { height:4px; background:var(--line); border-radius:2px; overflow:hidden; margin-top:6px; }
+  .fill { height:100%; width:0; background:var(--accent); }
+  .actions { display:flex; gap:6px; margin-top:6px; }
+  .msg { color:var(--err); font-size:12px; white-space:pre-wrap; margin-top:4px; }
+
+  #detail { overflow:auto; background:var(--panel); padding:14px; }
+  #detail h3 { margin:0 0 10px; font-size:14px; }
+  #cover { width:100%; border-radius:8px; margin-bottom:10px; display:block; background:#000; }
+  table { width:100%; border-collapse:collapse; }
+  td { padding:3px 0; vertical-align:top; }
+  td.k { color:var(--muted); white-space:nowrap; padding-right:12px; }
+  td.v { word-break:break-all; }
+  .sec { margin:14px 0 4px; font-weight:700; font-size:12px; color:var(--muted);
+    text-transform:uppercase; letter-spacing:.5px; }
+  .pill { display:inline-block; background:var(--bg); border:1px solid var(--line);
+    border-radius:5px; padding:1px 7px; margin:2px 3px 2px 0; font-size:12px; }
+  details { margin-top:8px; }
+  summary { cursor:pointer; color:var(--accent); }
+  #exifBox { max-height:420px; overflow:auto; font-size:12px; }
+  #exifBox pre { white-space:pre-wrap; word-break:break-all; }
+  #metaCn table { margin-top:2px; }
+  #metaCn td.v { word-break:break-word; }
+  #metaCn td.k { width:42%; }
+  footer { padding:4px 14px 8px; color:var(--muted); font-size:11px; }
+</style>
+</head>
+<body>
+  <div class="bar">
+    <button id="add">添加文件</button>
+    <button id="clear">清空</button>
+    <button id="outBtn">输出到：原文件旁边</button>
+    <span id="kindTag" class="kind">未选择文件</span>
+    <div class="spacer"></div>
+    <div id="quick" class="quick"></div>
+    <button id="advBtn" disabled>更多参数 ▾</button>
+    <button id="start" class="primary" disabled>转码选中</button>
+    <button id="startAll" disabled>全部转码</button>
+    <button id="cancel" disabled>停止</button>
+  </div>
+  <div id="adv" class="adv hidden"></div>
+
+  <div class="wrap">
+    <div id="drop"><div id="empty">把视频 / 音频 / 图片拖到这里<br>点击文件查看详细信息，或点 ▶ 直接播放</div></div>
+    <div id="detail"><h3>文件信息</h3><div style="color:var(--muted)">选择一个文件查看详情</div></div>
+  </div>
+  <footer id="foot"></footer>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const files = []; // {id, path, name, status, meta, cover, subtitleFiles, exifHtml}
+let outDir = null, running = false, stopRequested = false, nextId = 1, selected = null;
+let advOpen = false;
+
+api.info().then((i) => {
+  $('foot').textContent = (i.ffmpeg ? 'ffmpeg：' + i.ffmpeg : '⚠ 未找到 ffmpeg / ffprobe（brew install ffmpeg）') +
+    (i.exiftool ? '' : '　⚠ 未装 exiftool（brew install exiftool）') +
+    (i.imgtool ? '' : '　⚠ 图片转换组件缺失，请重新构建') +
+    (i.player ? '' : '　⚠ 播放器组件缺失，请重新构建');
+});
+
+const fmtDur = (s) => {
+  s = Math.round(s); const h = Math.floor(s/3600), m = Math.floor(s/60%60), x = s%60;
+  return (h?h+':':'') + String(m).padStart(2,'0') + ':' + String(x).padStart(2,'0');
+};
+const mbps = (b) => b ? (b/1e6).toFixed(1)+' Mbps' : '';
+const gsize = (b) => b ? (b/1e9>=1 ? (b/1e9).toFixed(2)+' GB' : (b/1e6).toFixed(1)+' MB') : '';
+const codecName = { hevc:'HEVC', h264:'H.264', h265:'H.265', av1:'AV1', vp9:'VP9',
+  eac3:'E-AC3', ac3:'AC3', aac:'AAC', mp3:'MP3', opus:'Opus', flac:'FLAC', alac:'ALAC',
+  pcm_s16le:'PCM 16bit', pcm_s24le:'PCM 24bit',
+  heic:'HEIC', heif:'HEIF', mjpeg:'JPEG', png:'PNG', webp:'WebP', tiff:'TIFF', bmp:'BMP', gif:'GIF',
+  hdmv_pgs_subtitle:'PGS 图形字幕', dvd_subtitle:'VobSub', subrip:'SRT', srt:'SRT', ass:'ASS', mov_text:'MP4 文本字幕', webvtt:'WebVTT' };
+const transferName = { 'smpte2084':'PQ (HDR)', 'arib-std-b67':'HLG (HDR)', 'bt709':'BT.709', 'bt2020_10':'BT.2020' };
+const KIND_NAME = { video:'视频', audio:'音频', image:'图片', other:'其他' };
+
+// ====================== 转码参数 ======================
+const DEFAULTS = {
+  video: {
+    container:'mp4', vcodec:'hevc_vt', rateMode:'bitrate', bitrate:'8M', crf:23,
+    maxrate:'', bufsize:'', preset:'medium', profile:'auto', level:'',
+    resolution:'keep', width:'', height:'', fps:'', pixFmt:'auto',
+    hdr:'auto', colorPrimaries:'auto', colorTrc:'auto', colorMatrix:'auto',
+    audioCodec:'aac', audioBitrate:'192k', sampleRate:'auto', channels:'auto',
+    subtitles:false, metadata:true, faststart:true, extra:''
+  },
+  audio: {
+    container:'mp3', codec:'auto', bitrate:'192k', vbr:'auto',
+    sampleRate:'auto', channels:'auto', metadata:true, extra:''
+  },
+  image: {
+    format:'jpg', quality:85, depth:'8', resize:'keep',
+    width:'', height:'', percent:100, hdr:'auto', metadata:true
+  }
+};
+const state = JSON.parse(JSON.stringify(DEFAULTS));
+try {
+  const saved = JSON.parse(localStorage.getItem('media-tool-settings') || 'null');
+  if (saved) for (const k of Object.keys(state)) Object.assign(state[k], saved[k] || {});
+} catch {}
+function saveSettings() {
+  try { localStorage.setItem('media-tool-settings', JSON.stringify(state)); } catch {}
+}
+
+const PRESETS = [['ultrafast','最快'],['superfast','很快'],['veryfast','较快'],['faster','快'],
+  ['fast','偏快'],['medium','均衡'],['slow','慢'],['slower','更慢'],['veryslow','最慢']];
+
+// 每种图片格式实际能调的参数（与 tools/imgtool.swift 一致）
+const IMG_DEPTHS = { jpg:['8'], png:['8','16'], tiff:['8','16'], heic:['8','10'], avif:['8','10'], bmp:['8'], gif:['8'] };
+const IMG_NOTES = {
+  jpg: 'JPEG 是有损格式：质量越高越清晰、文件越大，固定 8bit，不支持透明和 HDR。',
+  png: 'PNG 是无损格式：没有画质损失，可选 8/16bit，16bit 适合 HDR 或后期处理，文件通常比 JPEG 大。',
+  tiff: 'TIFF 是无损格式：可选 8/16bit，适合印刷和存档，文件很大。',
+  heic: 'HEIC 是有损格式：压缩率高、支持 10bit HDR，Apple 设备兼容最好。',
+  avif: 'AVIF 是有损格式：压缩率最高、支持 10bit HDR，但部分旧软件打不开。',
+  bmp: 'BMP 不压缩、固定 8bit，文件极大，只适合兼容老软件。',
+  gif: 'GIF 最多 256 色、固定 8bit，只适合简单图形和动图，不适合照片。'
+};
+// 容器与编码的兼容关系
+const VIDEO_CODECS_BY_CT = {
+  mp4: ['hevc_vt','h264_vt','libx265','libx264','av1','copy'],
+  mov: ['hevc_vt','h264_vt','libx265','libx264','copy'],
+  mkv: ['hevc_vt','h264_vt','libx265','libx264','av1','vp9','copy'],
+  webm: ['vp9','av1'],
+};
+const VIDEO_AUDIO_BY_CT = {
+  mp4: ['aac','copy','mp3','ac3','eac3','flac','none'],
+  mov: ['aac','copy','mp3','ac3','eac3','flac','none'],
+  mkv: ['aac','copy','mp3','ac3','eac3','flac','opus','none'],
+  webm: ['opus','none'],
+};
+const AUDIO_CODECS_BY_CT = {
+  mp3: ['auto','copy','libmp3lame'],
+  m4a: ['auto','copy','aac','alac'],
+  aac: ['auto','copy','aac'],
+  flac: ['auto','copy','flac'],
+  wav: ['auto','copy','pcm_s16le','pcm_s24le'],
+  ogg: ['auto','copy','libopus'],
+  alac: ['auto','copy','alac'],
+  copy: ['auto','copy'],
+};
+
+const FIELDS = {
+  video: [
+    { k:'container', l:'输出容器', t:'select', q:1,
+      o:[['mp4','MP4'],['mov','MOV'],['mkv','MKV'],['webm','WebM']] },
+    { k:'vcodec', l:'视频编码', t:'select', q:1,
+      o:[['hevc_vt','HEVC · 硬件'],['h264_vt','H.264 · 硬件'],['libx265','HEVC · 软件 x265'],
+         ['libx264','H.264 · 软件 x264'],['av1','AV1 · SVT'],['vp9','VP9 · libvpx'],
+         ['copy','直接复制（不重编码）']] },
+    { k:'rateMode', l:'码率控制', t:'select', q:1,
+      o:[['bitrate','目标码率'],['crf','恒定质量 CRF']], show:(s)=>s.vcodec!=='copy' },
+    { k:'bitrate', l:'视频码率', t:'text', q:1, ph:'如 8M / 4000k',
+      show:(s)=>s.rateMode==='bitrate' && s.vcodec!=='copy' },
+    { k:'crf', l:'CRF 质量', t:'number', q:1, min:0, max:63,
+      show:(s)=>s.rateMode==='crf' && s.vcodec!=='copy' },
+    { k:'resolution', l:'分辨率', t:'select', q:1,
+      o:[['keep','保持原尺寸'],['2160','4K (2160p)'],['1080','1080p'],['720','720p'],['480','480p'],['custom','自定义']],
+      show:(s)=>s.vcodec!=='copy' },
+
+    { k:'width', l:'宽（像素）', t:'number', ph:'自动',
+      show:(s)=>s.resolution==='custom' && s.vcodec!=='copy' },
+    { k:'height', l:'高（像素）', t:'number', ph:'自动',
+      show:(s)=>s.resolution==='custom' && s.vcodec!=='copy' },
+    { k:'fps', l:'帧率', t:'text', ph:'如 30 / 59.94', show:(s)=>s.vcodec!=='copy' },
+    { k:'maxrate', l:'最大码率', t:'text', ph:'如 10M',
+      show:(s)=>s.rateMode==='bitrate' && s.vcodec!=='copy' },
+    { k:'bufsize', l:'缓冲区', t:'text', ph:'如 16M',
+      show:(s)=>s.rateMode==='bitrate' && s.vcodec!=='copy' },
+    { k:'preset', l:'编码预设', t:'select', o:PRESETS,
+      show:(s)=>['libx264','libx265','av1'].includes(s.vcodec) },
+    { k:'profile', l:'编码档次', t:'select',
+      o:[['auto','自动'],['main','Main'],['main10','Main10'],['high','High'],['baseline','Baseline']],
+      show:(s)=>['libx265','libx264','av1'].includes(s.vcodec) },
+    { k:'level', l:'编码等级', t:'text', ph:'如 4.1',
+      show:(s)=>['libx265','libx264'].includes(s.vcodec) },
+    { k:'pixFmt', l:'像素格式', t:'select',
+      o:[['auto','自动'],['yuv420p','yuv420p 8bit'],['yuv422p','yuv422p 8bit'],['yuv444p','yuv444p 8bit'],
+         ['yuv420p10le','yuv420p10le 10bit'],['p010le','p010le 10bit'],['nv12','nv12']],
+      show:(s)=>['libx265','libx264','av1','vp9'].includes(s.vcodec) },
+    { k:'hdr', l:'HDR 处理', t:'select',
+      o:[['auto','自动（HDR 保留 / SDR 不变）'],['sdr','转为 SDR（BT.709 色调映射）']],
+      show:(s)=>s.vcodec!=='copy' },
+    { k:'colorPrimaries', l:'色彩原色', t:'select',
+      o:[['auto','自动'],['bt709','BT.709'],['bt2020','BT.2020'],['smpte432','Display P3']],
+      show:(s)=>s.vcodec!=='copy' },
+    { k:'colorTrc', l:'传递函数', t:'select',
+      o:[['auto','自动'],['bt709','BT.709'],['smpte2084','PQ (HDR10)'],['arib-std-b67','HLG']],
+      show:(s)=>s.vcodec!=='copy' },
+    { k:'colorMatrix', l:'色彩矩阵', t:'select',
+      o:[['auto','自动'],['bt709','BT.709'],['bt2020nc','BT.2020 非恒定亮度'],['bt2020c','BT.2020 恒定亮度']],
+      show:(s)=>s.vcodec!=='copy' },
+
+    { k:'audioCodec', l:'音频编码', t:'select',
+      o:[['aac','AAC'],['copy','复制'],['mp3','MP3'],['ac3','AC3'],['eac3','E-AC3'],['flac','FLAC'],['opus','Opus'],['none','不要音频']] },
+    { k:'audioBitrate', l:'音频码率', t:'text', ph:'如 192k',
+      show:(s)=>!['copy','none'].includes(s.audioCodec) },
+    { k:'sampleRate', l:'音频采样率', t:'select',
+      o:[['auto','自动'],['48000','48 kHz'],['44100','44.1 kHz'],['96000','96 kHz']],
+      show:(s)=>!['copy','none'].includes(s.audioCodec) },
+    { k:'channels', l:'音频声道', t:'select',
+      o:[['auto','自动'],['1','单声道'],['2','立体声'],['6','5.1'],['8','7.1']],
+      show:(s)=>!['copy','none'].includes(s.audioCodec) },
+    { k:'subtitles', l:'保留字幕', t:'check', show:(s)=>s.container!=='webm' },
+    { k:'metadata', l:'保留元数据', t:'check' },
+    { k:'faststart', l:'MP4 faststart', t:'check',
+      show:(s)=>['mp4','mov'].includes(s.container) },
+    { k:'extra', l:'额外 ffmpeg 参数', t:'text', wide:true, ph:'例如 -tune film -x265-params log-level=error' },
+    { k:'note', l:'提示', t:'note',
+      text:'「直接复制」不重编码，只换封装；CRF 只在软件编码时精确生效，硬件编码会把 CRF 粗略换算成质量值。图形字幕只有 MKV 能原样复制。' }
+  ],
+  audio: [
+    { k:'container', l:'输出格式', t:'select', q:1,
+      o:[['mp3','MP3'],['m4a','M4A (AAC)'],['aac','AAC (ADTS)'],['flac','FLAC 无损'],
+         ['wav','WAV'],['ogg','OGG (Opus)'],['alac','ALAC 无损'],['copy','原样复制 (MKA)']] },
+    { k:'bitrate', l:'码率', t:'text', q:1, ph:'如 320k',
+      show:(s)=>!['flac','wav','alac','copy'].includes(s.container) },
+    { k:'sampleRate', l:'采样率', t:'select', q:1,
+      o:[['auto','自动'],['48000','48 kHz'],['44100','44.1 kHz'],['96000','96 kHz'],['192000','192 kHz']] },
+    { k:'codec', l:'音频编码', t:'select',
+      o:[['auto','按格式自动'],['copy','复制'],['aac','AAC'],['libmp3lame','MP3'],['flac','FLAC'],
+         ['alac','ALAC'],['libopus','Opus'],['pcm_s16le','PCM 16bit'],['pcm_s24le','PCM 24bit']] },
+    { k:'vbr', l:'VBR 模式', t:'select', o:[['auto','自动'],['on','开启 VBR'],['off','固定码率']],
+      show:(s)=>s.container==='mp3' || s.codec==='libopus' || s.container==='ogg' },
+    { k:'channels', l:'声道', t:'select',
+      o:[['auto','自动'],['1','单声道'],['2','立体声'],['6','5.1'],['8','7.1']] },
+    { k:'metadata', l:'保留元数据', t:'check' },
+    { k:'extra', l:'额外 ffmpeg 参数', t:'text', wide:true, ph:'例如 -af loudnorm' },
+    { k:'note', l:'提示', t:'note',
+      text:'无损格式（FLAC / WAV / ALAC）会忽略码率；从视频提取音频时只取第一条音轨。' }
+  ],
+  image: [
+    { k:'format', l:'输出格式', t:'select', q:1,
+      o:[['jpg','JPEG'],['png','PNG'],['tiff','TIFF'],['heic','HEIC'],['avif','AVIF'],['bmp','BMP'],['gif','GIF']] },
+    { k:'quality', l:'质量', t:'number', q:1, min:0, max:100,
+      show:(s)=>['jpg','heic','avif'].includes(s.format) },
+    { k:'depth', l:'位深', t:'select', q:1,
+      o:[['8','8 bit'],['10','10 bit'],['16','16 bit']],
+      show:(s)=>['png','tiff','heic','avif'].includes(s.format) },
+    { k:'resize', l:'缩放', t:'select', q:1,
+      o:[['keep','不缩放'],['width','按宽度'],['height','按高度'],['long','按长边'],['percent','按百分比'],['custom','自定义宽高']] },
+    { k:'width', l:'宽 / 长边（像素）', t:'number', ph:'如 2000',
+      show:(s)=>['width','long','custom'].includes(s.resize) },
+    { k:'height', l:'高（像素）', t:'number', ph:'自动',
+      show:(s)=>['height','custom'].includes(s.resize) },
+    { k:'percent', l:'缩放百分比', t:'number', min:1, max:800,
+      show:(s)=>s.resize==='percent' },
+    { k:'hdr', l:'HDR', t:'select',
+      o:[['auto','自动（高动态范围图片尽量保留）'],['keep','保留 HDR'],['sdr','转 SDR（SDR 兼容更好）']],
+      show:(s)=>['png','tiff','heic','avif'].includes(s.format) },
+    { k:'metadata', l:'保留 EXIF / GPS', t:'check',
+      show:(s)=>s.format!=='bmp' && s.format!=='gif' },
+    { k:'note', l:'提示', t:'note', text:(s)=>IMG_NOTES[s.format] || '' }
+  ]
+};
+
+function buildField(f, kind) {
+  const s = state[kind];
+  if (f.t === 'note') {
+    const d = document.createElement('div');
+    d.className = 'note';
+    d._text = typeof f.text === 'function' ? f.text : null;
+    d.textContent = d._text ? d._text(s) : f.text;
+    d._show = f.show;
+    return d;
+  }
+  const wrap = document.createElement('label');
+  if (f.wide) wrap.classList.add('wide');
+  if (f.t === 'check') wrap.classList.add('check');
+  const cap = document.createElement('span');
+  cap.textContent = f.l;
+  wrap.appendChild(cap);
+  let el;
+  if (f.t === 'select') {
+    el = document.createElement('select');
+    for (const [v, label] of f.o) {
+      const op = document.createElement('option');
+      op.value = v; op.textContent = label;
+      el.appendChild(op);
+    }
+    el.value = String(s[f.k] ?? '');
+    el.onchange = () => { s[f.k] = el.value; saveSettings(); applyVisibility(kind); };
+  } else if (f.t === 'check') {
+    el = document.createElement('input');
+    el.type = 'checkbox';
+    el.checked = !!s[f.k];
+    el.onchange = () => { s[f.k] = el.checked; saveSettings(); };
+  } else {
+    el = document.createElement('input');
+    el.type = f.t === 'number' ? 'number' : 'text';
+    if (f.min != null) el.min = f.min;
+    if (f.max != null) el.max = f.max;
+    if (f.ph) el.placeholder = f.ph;
+    el.value = s[f.k] ?? '';
+    el.onchange = () => {
+      s[f.k] = f.t === 'number' ? (el.value === '' ? '' : Number(el.value)) : el.value;
+      saveSettings(); applyVisibility(kind);
+    };
+  }
+  el.dataset.key = f.k;
+  wrap.appendChild(el);
+  wrap._show = f.show;
+  return wrap;
+}
+
+function pickAllowed(cur, allowed) {
+  if (allowed.includes(cur)) return cur;
+  const n = Number(cur);
+  if (!isNaN(n) && cur !== '') {
+    let best = allowed[0], bd = Infinity;
+    for (const a of allowed) {
+      const d = Math.abs(Number(a) - n);
+      if (d < bd) { bd = d; best = a; }
+    }
+    return best;
+  }
+  return allowed[0];
+}
+
+// 选项按格式/容器过滤：不兼容的编码或位深直接禁用
+function filterSelect(kind, key, allowed) {
+  const sel = document.querySelector(`#quick select[data-key="${key}"], #adv select[data-key="${key}"]`);
+  if (!sel) return;
+  for (const opt of sel.options) {
+    const ok = allowed.includes(opt.value);
+    opt.hidden = !ok;
+    opt.disabled = !ok;
+  }
+  const cur = String(state[kind][key]);
+  const next = pickAllowed(cur, allowed);
+  if (next !== cur) { state[kind][key] = next; saveSettings(); }
+  sel.value = next;
+}
+
+function syncDependentOptions(kind) {
+  if (kind === 'image') {
+    filterSelect('image', 'depth', IMG_DEPTHS[state.image.format] || ['8']);
+  } else if (kind === 'video') {
+    const ct = state.video.container;
+    filterSelect('video', 'vcodec', VIDEO_CODECS_BY_CT[ct] || VIDEO_CODECS_BY_CT.mp4);
+    filterSelect('video', 'audioCodec', VIDEO_AUDIO_BY_CT[ct] || VIDEO_AUDIO_BY_CT.mp4);
+  } else if (kind === 'audio') {
+    filterSelect('audio', 'codec', AUDIO_CODECS_BY_CT[state.audio.container] || ['auto']);
+  }
+}
+
+function applyVisibility(kind) {
+  syncDependentOptions(kind);
+  document.querySelectorAll('#quick > [data-key], #adv > [data-key], #quick > label, #adv > label, #quick > .note, #adv > .note').forEach((el) => {
+    const fn = el._show;
+    el.style.display = (!fn || fn(state[kind])) ? '' : 'none';
+  });
+  document.querySelectorAll('#quick > .note, #adv > .note').forEach((el) => {
+    if (el._text) el.textContent = el._text(state[kind]);
+  });
+}
+
+function selectedFile() {
+  return files.find((x) => x.id === selected) || null;
+}
+
+function renderSettings() {
+  const f = selectedFile();
+  const kind = f && f.meta ? f.meta.kind : null;
+  const quick = $('quick'), adv = $('adv');
+  quick.textContent = ''; adv.textContent = '';
+  if (!kind || kind === 'other') {
+    $('kindTag').textContent = f ? '解析中…' : '未选择文件';
+    $('start').disabled = true;
+    $('advBtn').disabled = true;
+    const h = document.createElement('span');
+    h.className = 'hint';
+    h.textContent = '选择左侧文件后显示对应类型的输出参数';
+    quick.appendChild(h);
+    adv.classList.add('hidden');
+    return;
+  }
+  $('kindTag').innerHTML = '类型：<b>' + KIND_NAME[kind] + '</b>';
+  $('start').disabled = running;
+  $('advBtn').disabled = false;
+  for (const fld of FIELDS[kind]) {
+    const el = buildField(fld, kind);
+    (fld.q ? quick : adv).appendChild(el);
+  }
+  applyVisibility(kind);
+  adv.classList.toggle('hidden', !advOpen);
+}
+
+// ====================== 添加 / 列表 ======================
+function addFiles(paths) {
+  for (const p of paths) {
+    if (files.some((f) => f.path === p)) continue;
+    const f = { id: nextId++, path: p, name: p.split('/').pop(), status: '解析中…' };
+    files.push(f);
+    render();
+    api.probe(p).then((r) => {
+      if (r.error) { f.status = r.error; }
+      else { f.meta = r.meta; f.cover = r.cover; f.subtitleFiles = r.subtitleFiles; f.status = null; }
+      if (selected === f.id) { showDetail(f); renderSettings(); }
+      render();
+    });
+  }
+}
+
+function badge(f) {
+  const m = f.meta;
+  if (!m) return '';
+  if (m.kind === 'image') return '<span class="badge b-img">图片</span>';
+  if (m.kind === 'audio') return '<span class="badge b-aud">音频</span>';
+  const v = m.video;
+  if (!v) return '';
+  if (v.isDV) return '<span class="badge b-dv">杜比视界' + (v.dvProfile?' P'+v.dvProfile:'') + '</span>';
+  if (v.isHDR) return '<span class="badge b-hdr">HDR10</span>';
+  return '<span class="badge b-sdr">SDR</span>';
+}
+
+function subInfo(f) {
+  const m = f.meta;
+  if (!m) return '';
+  const v = m.video;
+  if (m.kind === 'image') {
+    return '图片' + (v ? ` · ${(codecName[v.codec] || v.codec || '')} · ${v.width}×${v.height}` : '');
+  }
+  if (m.kind === 'audio') {
+    const a = m.audio && m.audio[0];
+    return '音频' + (a ? ` · ${codecName[a.codec] || a.codec} · ${a.channels}声道 · ${(a.sampleRate/1000)}kHz` : '')
+      + (m.duration ? ' · ' + fmtDur(m.duration) : '');
+  }
+  if (v) return `${codecName[v.codec] || v.codec} · ${v.width}×${v.height} · ${fmtDur(m.duration)}`;
+  return (m.format || '').toUpperCase();
+}
+
+function render() {
+  const d = $('drop');
+  d.querySelectorAll('.row').forEach((n) => n.remove());
+  $('empty').style.display = files.length ? 'none' : '';
+  for (const f of files) {
+    const el = document.createElement('div');
+    el.className = 'row' + (selected === f.id ? ' sel' : '');
+    el.innerHTML = `<div class="top"><span class="nm"></span>${badge(f)}</div>
+      <div class="sub"><span class="info"></span><span class="status"></span></div>
+      <div class="track"><div class="fill"></div></div>
+      <div class="actions"></div>`;
+    el.querySelector('.nm').textContent = f.name;
+    el.querySelector('.nm').title = f.path;
+    el.querySelector('.info').textContent = subInfo(f);
+    el.querySelector('.status').textContent = f.status || '';
+    const fill = el.querySelector('.fill');
+    if (f.pct) fill.style.width = f.pct + '%';
+    if (f.done) {
+      fill.style.width = '100%';
+      const st = el.querySelector('.status');
+      st.style.color = 'var(--ok)';
+      st.style.cursor = 'pointer';
+      st.title = '在访达中显示';
+      st.onclick = (e) => { e.stopPropagation(); api.reveal(f.out); };
+    }
+    const acts = el.querySelector('.actions');
+    const playBtn = document.createElement('button');
+    playBtn.className = 'mini'; playBtn.textContent = '▶ 播放';
+    playBtn.onclick = (e) => { e.stopPropagation(); play(f); };
+    acts.appendChild(playBtn);
+    const infoBtn = document.createElement('button');
+    infoBtn.className = 'mini'; infoBtn.textContent = '详情';
+    infoBtn.onclick = (e) => { e.stopPropagation(); select(f.id); };
+    acts.appendChild(infoBtn);
+    el.onclick = () => select(f.id);
+    d.appendChild(el);
+  }
+  const canAll = !running && files.some((f) => f.meta && ['video','audio','image'].includes(f.meta.kind) && !f.done);
+  $('startAll').disabled = !canAll;
+  if (!running) $('start').disabled = !(selectedFile() && selectedFile().meta && ['video','audio','image'].includes(selectedFile().meta.kind));
+}
+
+function select(id) {
+  selected = id;
+  render();
+  const f = selectedFile();
+  if (f) {
+    showDetail(f);
+    renderSettings();
+  }
+}
+
+// ====================== 详情 ======================
+function showDetail(f) {
+  const box = $('detail');
+  if (!f.meta) { box.innerHTML = '<h3>文件信息</h3><div style="color:var(--muted)">解析中…</div>'; return; }
+  const m = f.meta, v = m.video, kind = m.kind;
+  let h = '<h3>' + escapeHtml(f.name) + '</h3>';
+  if (f.cover) h += `<img id="cover" src="file://${f.cover}">`;
+  h += `<table>`;
+  const add = (k, val) => { if (val !== null && val !== undefined && val !== '') h += `<tr><td class="k">${k}</td><td class="v">${val}</td></tr>`; };
+  const sec = (title) => { h += `<tr><td colspan="2" class="sec">${title}</td></tr>`; };
+  const row = (html) => { h += `<tr><td colspan="2">${html}</td></tr>`; };
+  const extName = (f.path.split('.').pop() || '').toUpperCase();
+
+  if (kind === 'image') {
+    add('类型', '图片');
+    add('大小', gsize(m.size));
+    add('格式', extName);
+    if (v) {
+      add('尺寸', `${v.width} × ${v.height}`);
+      add('像素数', ((v.width * v.height) / 1e6).toFixed(1) + ' MP');
+      add('编码', `${codecName[v.codec] || v.codec}${v.profile ? ' (' + v.profile + ')' : ''}`);
+      add('位深', m.image && m.image.bitDepth ? m.image.bitDepth + ' bit' : '');
+      add('色彩配置', (m.image && m.image.profile) || v.colorSpace || '');
+      add('传递函数', transferName[v.transfer] || v.transfer || '');
+    }
+  } else {
+    add('时长', fmtDur(m.duration));
+    add('大小', gsize(m.size));
+    add('容器', extName);
+  }
+
+  if (kind === 'video' && v) {
+    sec('视频');
+    add('编码', `${codecName[v.codec]||v.codec}${v.profile? ' ('+v.profile+')':''}`);
+    add('分辨率', `${v.width} × ${v.height}`);
+    add('帧率', v.fps ? v.fps.toFixed(2)+' fps' : '');
+    add('码率', mbps(v.bitrate));
+    add('像素格式', v.pixFmt);
+    add('色彩空间', v.colorSpace || '');
+    add('传递函数', transferName[v.transfer] || v.transfer || '');
+    add('色彩原色', v.primaries || '');
+    if (v.isDV) add('杜比视界', `Profile ${v.dvProfile} · Level ${v.dvLevel}`);
+    if (v.maxCLL) add('峰值/平均亮度', `${v.maxCLL} / ${v.maxFALL} nits`);
+  }
+  if (m.audio && m.audio.length) {
+    sec(`音频（${m.audio.length} 轨）`);
+    let pills = '';
+    for (const a of m.audio) {
+      const lang = a.language && a.language !== 'und' ? ' · ' + a.language : '';
+      pills += `<div class="pill">${codecName[a.codec]||a.codec}${a.atmos?' · 全景声':''} · ${a.channels}声道 · ${(a.sampleRate/1000)}kHz${lang}</div>`;
+    }
+    row(pills);
+  }
+  if (m.subtitles && m.subtitles.length) {
+    sec(`字幕（${m.subtitles.length} 轨）`);
+    let pills = '';
+    for (const s of m.subtitles) {
+      const sf = (f.subtitleFiles || []).find((x) => x.index === s.index);
+      const ocr = sf && sf.needOCR;
+      pills += `<div class="pill">${codecName[s.codec] || s.codec}${s.title ? ' · ' + s.title : ''}${s.language ? ' · ' + s.language : ''}`;
+      pills += ocr ? ` <button class="mini" data-ocr="${s.index}">OCR</button>` : ' ✓';
+      pills += `</div>`;
+    }
+    row(pills);
+  }
+  if (m.chapters && m.chapters.length) {
+    sec(`章节（${m.chapters.length}）`);
+    let pills = '';
+    for (const c of m.chapters) pills += `<span class="pill">${fmtDur(c.start)} ${escapeHtml(c.title)}</span>`;
+    row(pills);
+  }
+  h += `</table>`;
+  h += `<details><summary>完整元数据 (exiftool)</summary><div id="exifBox">读取中…</div></details>`;
+  h += `<div class="sec">元数据中文说明</div><div id="metaCn"><div class="hint">读取中…</div></div>`;
+  box.innerHTML = h;
+  box.querySelectorAll('[data-ocr]').forEach((btn) => {
+    btn.onclick = () => {
+      btn.textContent = 'OCR中…'; btn.disabled = true;
+      api.ocr(f.path, Number(btn.dataset.ocr));
+    };
+  });
+  // 选中文件就读取元数据，中文说明不用展开原始标签也能看到
+  loadExif(f);
+  loadExtras(f);
+  const det = box.querySelector('details');
+  det.addEventListener('toggle', () => { if (det.open) loadExif(f); });
+}
+function escapeHtml(s) { return String(s).replace(/[&<>"']/g, (c)=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+// 封面和字幕按需生成：导入时不解码，选中后才做
+function loadExtras(f) {
+  if (f.extrasLoaded || f.extrasLoading) return;
+  if (f.meta && f.meta.kind === 'audio') { f.extrasLoaded = true; return; }
+  f.extrasLoading = true;
+  api.extras(f.path).then((r) => {
+    f.extrasLoading = false;
+    f.extrasLoaded = true;
+    if (r && !r.error) {
+      f.cover = r.cover;
+      f.subtitleFiles = r.subtitleFiles || [];
+    }
+    if (selected === f.id) showDetail(f);
+  }).catch(() => { f.extrasLoading = false; f.extrasLoaded = true; });
+}
+
+// —— EXIF 中文说明 ——
+const EXIF_CN = {
+  Make:'制造商', Model:'型号', LensModel:'镜头', LensID:'镜头 ID', LensInfo:'镜头规格',
+  SerialNumber:'机身序列号', Software:'软件', Artist:'作者', Copyright:'版权',
+  DateTimeOriginal:'拍摄时间', CreateDate:'创建时间', ModifyDate:'修改时间',
+  FileModifyDate:'文件修改时间', FileCreateDate:'文件创建时间',
+  ExposureTime:'曝光时间', ShutterSpeedValue:'快门速度', ShutterSpeed:'快门速度',
+  FNumber:'光圈', Aperture:'光圈',
+  ISO:'感光度', ISOSpeedRatings:'感光度', RecommendedExposureIndex:'推荐曝光指数',
+  FocalLength:'焦距', FocalLengthIn35mmFormat:'等效 35mm 焦距',
+  FocalLength35efl:'等效 35mm 焦距', ScaleFactor35efl:'焦距换算系数',
+  ExposureProgram:'曝光程序', ExposureMode:'曝光模式', ExposureCompensation:'曝光补偿',
+  MeteringMode:'测光模式', WhiteBalance:'白平衡', Flash:'闪光灯', LightSource:'光源',
+  SceneCaptureType:'场景类型', DigitalZoomRatio:'数码变焦',
+  ColorSpace:'色彩空间', ProfileDescription:'色彩配置', ProfileCopyright:'色彩配置版权',
+  ColorPrimaries:'色彩原色', TransferCharacteristics:'传递函数', MatrixCoefficients:'色彩矩阵',
+  VideoFullRangeFlag:'视频范围', Orientation:'方向', Compression:'压缩方式',
+  BitsPerSample:'位深', SamplesPerPixel:'通道数',
+  ImageWidth:'图像宽度', ImageHeight:'图像高度', ImageSize:'图像尺寸',
+  PixelXDimension:'像素宽度', PixelYDimension:'像素高度', Megapixels:'像素数',
+  XResolution:'水平分辨率', YResolution:'垂直分辨率', ResolutionUnit:'分辨率单位',
+  GPSLatitude:'纬度', GPSLongitude:'经度', GPSLatitudeRef:'纬度方向', GPSLongitudeRef:'经度方向',
+  GPSAltitude:'海拔', GPSPosition:'GPS 位置',
+  GPSDateTime:'GPS 时间', GPSDateStamp:'GPS 日期', GPSTimeStamp:'GPS 时间（UTC）',
+  GPSAltitudeRef:'海拔基准', GPSImgDirection:'拍摄朝向', GPSDestBearing:'目标方位',
+  GPSHPositioningError:'定位误差',
+  FileType:'文件类型', MIMEType:'MIME 类型', FileSize:'文件大小',
+  Duration:'时长', AvgBitrate:'平均码率', VideoFrameRate:'帧率',
+  AudioChannels:'声道数', AudioSampleRate:'采样率', AudioBitsPerSample:'音频位深',
+  CompressorName:'编码器', CompressorID:'编码器 ID', CodecID:'编码 ID',
+  HandlerType:'媒体类型', MajorBrand:'容器品牌', MinorVersion:'容器版本',
+  HDRGainMapVersion:'HDR 增益图版本', HDRHeadroom:'HDR 余量',
+  GainMapMin:'增益图最小值', GainMapMax:'增益图最大值', Gamma:'伽马',
+  ImageDescription:'图像描述', UserComment:'用户注释', XPComment:'备注',
+  LightValue:'曝光值 (LV)', FOV:'视场角', HyperfocalDistance:'超焦距',
+  CircleOfConfusion:'弥散圆', RunTimeSincePowerUp:'开机时长',
+  FNumber35efl:'等效光圈',
+};
+const EXIF_VAL = {
+  Orientation: {1:'正常',2:'左右翻转',3:'旋转 180°',4:'上下翻转',
+    5:'顺时针旋转 90°并翻转',6:'顺时针旋转 90°',7:'逆时针旋转 90°并翻转',8:'逆时针旋转 90°'},
+  ColorSpace: {1:'sRGB',2:'Adobe RGB',65535:'未校准 / 使用嵌入配置'},
+  ExposureProgram: {0:'未定义',1:'手动',2:'程序自动',3:'光圈优先',4:'快门优先',
+    5:'创意程序',6:'运动程序',7:'人像模式',8:'风景模式'},
+  MeteringMode: {0:'未知',1:'平均测光',2:'中央重点测光',3:'点测光',4:'多点测光',5:'评价测光',6:'局部测光',255:'其他'},
+  WhiteBalance: {0:'自动',1:'手动'},
+  ResolutionUnit: {2:'英寸 (dpi)',3:'厘米'},
+  Compression: {1:'未压缩',5:'LZW',6:'JPEG',7:'JPEG',8:'Deflate',32773:'PackBits',32946:'Deflate'},
+  SceneCaptureType: {0:'标准',1:'风景',2:'人像',3:'夜景'},
+};
+const EXIF_VAL_STR = {
+  Orientation: { 'Horizontal (normal)':'水平（正常）', 'Rotate 90 CW':'顺时针旋转 90°',
+    'Rotate 180':'旋转 180°', 'Rotate 270 CW':'逆时针旋转 90°', 'Mirror horizontal':'左右翻转',
+    'Mirror vertical':'上下翻转' },
+  ColorSpace: { Uncalibrated:'未校准（使用嵌入配置）', sRGB:'sRGB', 'Display P3':'Display P3',
+    'Adobe RGB':'Adobe RGB' },
+  ExposureProgram: { 'Program AE':'程序自动曝光', Manual:'手动', 'Aperture-priority AE':'光圈优先',
+    'Shutter speed priority AE':'快门优先', 'Creative Program':'创意程序', 'Action Program':'运动程序',
+    Portrait:'人像模式', Landscape:'风景模式', 'Not Defined':'未定义' },
+  MeteringMode: { 'Multi-segment':'评价测光（多区）', 'Center-weighted average':'中央重点测光',
+    Spot:'点测光', Average:'平均测光', Partial:'局部测光', Unknown:'未知' },
+  WhiteBalance: { Auto:'自动', Manual:'手动' },
+  ExposureMode: { Auto:'自动', Manual:'手动' },
+  ResolutionUnit: { inches:'英寸 (dpi)', cm:'厘米' },
+  GPSLatitudeRef: { N:'北纬', S:'南纬', North:'北纬', South:'南纬' },
+  GPSLongitudeRef: { E:'东经', W:'西经', East:'东经', West:'西经' },
+  GPSAltitudeRef: { 'Above Sea Level':'海平面以上', 'Below Sea Level':'海平面以下' },
+  GPSImgDirectionRef: { 'True North':'真北', 'Magnetic North':'磁北' },
+  GPSDestBearingRef: { 'True North':'真北', 'Magnetic North':'磁北' },
+  Flash: { 'Off, Did not fire':'未闪光', 'On, Fired':'闪光', 'Auto, Did not fire':'自动，未闪光',
+    'Auto, Fired':'自动闪光', 'No Flash':'未闪光' },
+  SceneCaptureType: { Standard:'标准', Landscape:'风景', Portrait:'人像', Night:'夜景' },
+};
+
+const DMS_RE = /(-?\d+(?:\.\d+)?)\s*deg\s*(\d+(?:\.\d+)?)'\s*([\d.]+)"/;
+
+// 度分秒 → 十进制度，例如 31 deg 16' 36.87" → 31.2769°
+function dmsToDec(s) {
+  const m = String(s).match(DMS_RE);
+  if (!m) return null;
+  let d = Number(m[1]) + Number(m[2]) / 60 + Number(m[3]) / 3600;
+  if (d < 0) d = d;
+  return Number(d.toFixed(4));
+}
+
+function trMeta(tag, val) {
+  const out = (text, raw) => ({ text, raw: raw === undefined ? null : raw });
+  if (val === null || val === undefined) return out('');
+  const s = typeof val === 'object' ? JSON.stringify(val) : String(val);
+
+  if (tag === 'GPSLatitude' || tag === 'GPSLongitude') {
+    const d = dmsToDec(s);
+    if (d !== null) return out(d.toFixed(4) + '°', s);
+  }
+  if (tag === 'GPSPosition') {
+    const parts = s.split(/,\s*/);
+    if (parts.length === 2) {
+      const lat = dmsToDec(parts[0]), lon = dmsToDec(parts[1]);
+      if (lat !== null && lon !== null) return out(`${lat.toFixed(4)}°, ${lon.toFixed(4)}°`, s);
+    }
+  }
+  if (tag === 'GPSDateTime') {
+    const iso = s.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3').replace(' ', 'T');
+    const d = new Date(iso);
+    if (!isNaN(d)) {
+      const p = (n) => String(n).padStart(2, '0');
+      return out(`${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}（本地时间）`, s);
+    }
+  }
+  if (tag === 'FOV') return out(s.replace(/\s*deg$/i, '°'), s);
+  if (tag === 'ImageSize') return out(s.replace(/x/i, ' × '), s);
+  if (tag === 'HandlerType') {
+    const map = { Picture:'静态图像', Video:'视频', Audio:'音频', Metadata:'元数据' };
+    if (map[s]) return out(map[s], s);
+  }
+  if (tag === 'MajorBrand' && /HEIC|HEIF/i.test(s)) return out('HEIC（高效图像格式）', s);
+  if (tag === 'MajorBrand' && /^MP4 /i.test(s)) return out('MP4（标准容器）', s);
+  if (tag === 'VideoFrameRate') {
+    const n = Number(s);
+    return out(isNaN(n) ? s : (n % 1 ? n.toFixed(2) : n) + ' fps', s);
+  }
+  if ((tag === 'ColorPrimaries' || tag === 'TransferCharacteristics' || tag === 'MatrixCoefficients') && s === 'Unspecified')
+    return out('未指定', s);
+  if (tag === 'VideoFullRangeFlag') {
+    const map = { Full:'全范围（0-255）', Limited:'有限范围（16-235）', On:'全范围（0-255）', Off:'有限范围（16-235）' };
+    if (map[s]) return out(map[s], s);
+  }
+  if (tag === 'LensInfo' || tag === 'LensID') {
+    return out(s.replace(/(\d+\.\d{3,})/g, (x) => Number(x).toFixed(2)), s);
+  }
+
+  const sm = EXIF_VAL_STR[tag];
+  if (sm && sm[s]) return out(sm[s], s);
+  if (tag === 'FNumber' || tag === 'Aperture') {
+    const n = Number(s);
+    return out(isNaN(n) ? s : 'f/' + (n % 1 ? n.toFixed(1) : n), s);
+  }
+  if (tag === 'ExposureTime' || tag === 'ShutterSpeed' || tag === 'ShutterSpeedValue')
+    return out(/秒/.test(s) ? s : s + ' 秒', s);
+  if (tag === 'FocalLength' || tag === 'FocalLengthIn35mmFormat' || tag === 'FocalLength35efl')
+    return out(/mm/.test(s) ? s : s + ' mm', s);
+  if (tag === 'ISO' || tag === 'ISOSpeedRatings') return out('ISO ' + s, s);
+  if (/DateTime|CreateDate|ModifyDate/.test(tag)) {
+    if (/^0000:00:00|^0000-00-00/.test(s)) return out('未设置', s);
+    return out(s.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3'), s);
+  }
+  if (tag === 'RunTimeSincePowerUp')
+    return out(s.replace(/\bdays?\b/g, '天').replace(/\bhours?\b/g, '小时').replace(/\bminutes?\b/g, '分钟').replace(/\bseconds?\b/g, '秒'), s);
+  if (tag === 'GPSAltitude') return out(/(^|\s)m(\s|$)/.test(s) ? s : s + ' m', s);
+  if (tag === 'GPSImgDirection' || tag === 'GPSDestBearing') {
+    const n = Number(s);
+    if (!isNaN(n)) return out(n.toFixed(1) + '°', s);
+  }
+  if (tag === 'GPSHPositioningError') {
+    const n = parseFloat(s);
+    if (!isNaN(n)) return out('±' + (n >= 100 ? Math.round(n) : n.toFixed(1)) + ' m', s);
+  }
+  if (tag === 'GPSDateStamp') return out(s.replace(/^(\d{4}):(\d{2}):(\d{2})/, '$1-$2-$3'), s);
+  if (tag === 'Megapixels') return out(s + ' MP', s);
+  if (tag === 'HDRHeadroom' && !isNaN(Number(s))) return out(Number(s).toFixed(2), s);
+  const m = EXIF_VAL[tag];
+  if (m && m[s] !== undefined) return out(m[s], s);
+  return out(s);
+}
+
+function loadExif(f) {
+  const box = $('exifBox');
+  const metaBox = $('metaCn');
+  if (f.exifHtml) {
+    if (box) box.innerHTML = f.exifHtml;
+    if (metaBox) metaBox.innerHTML = f.metaHtml || '<div class="hint">没有可翻译的常用字段</div>';
+    return;
+  }
+  api.exif(f.path).then((r) => {
+    if (r.error) {
+      f.exifHtml = escapeHtml(r.error);
+      f.metaHtml = '<div class="hint">' + escapeHtml(r.error) + '</div>';
+      if (box) box.innerHTML = f.exifHtml;
+      if (metaBox) metaBox.innerHTML = f.metaHtml;
+      return;
+    }
+    const raw = [], pretty = [], seen = new Set();
+    for (const key of Object.keys(r)) {
+      const tag = key.replace(/^\[[^\]]*\]\s*/, '').replace(/^[^:]+:/, '');
+      const val = typeof r[key] === 'object' ? JSON.stringify(r[key]) : r[key];
+      raw.push(`${key} = ${val}`);
+      const cn = EXIF_CN[tag];
+      if (cn && !seen.has(cn)) {
+        seen.add(cn);
+        pretty.push({ cn, ...trMeta(tag, val) });
+      }
+    }
+    // 分辨率单位在后面才出现，补上 dpi / px/cm
+    const unit = pretty.find((p) => p.cn === '分辨率单位');
+    if (unit && /英寸|inch/i.test(unit.raw || '')) {
+      for (const p of pretty) {
+        if ((p.cn === '水平分辨率' || p.cn === '垂直分辨率') && /^[\d.]+$/.test(p.text)) p.text += ' dpi';
+      }
+    }
+    f.exifHtml = '<pre>' + escapeHtml(raw.join('\n')) + '</pre>';
+    if (pretty.length) {
+      let mh = '<table>';
+      for (const p of pretty) {
+        const tip = p.raw && p.raw !== p.text ? ` title="原始值：${escapeHtml(p.raw)}"` : '';
+        mh += `<tr><td class="k">${escapeHtml(p.cn)}</td><td class="v"${tip}>${escapeHtml(p.text)}</td></tr>`;
+      }
+      mh += '</table><div class="hint" style="margin-top:6px">以上为常用字段的通俗解释，鼠标悬停可看原始值，完整原始标签见上方的「完整元数据」。</div>';
+      f.metaHtml = mh;
+    } else {
+      f.metaHtml = '<div class="hint">没有可翻译的常用字段</div>';
+    }
+    if (selected === f.id) {
+      if (box) box.innerHTML = f.exifHtml;
+      if (metaBox) metaBox.innerHTML = f.metaHtml;
+    }
+  });
+}
+
+// ====================== 播放 ======================
+function play(f) {
+  api.play(f.path).then((r) => { if (r && r.error) alert('无法播放：' + r.error); })
+    .catch((e) => alert('无法播放：' + (e && e.message || e)));
+}
+api.onPlayError(({ error }) => alert('播放器启动失败：' + error));
+
+// ====================== 转码 ======================
+api.onProgress(({ id, pct }) => {
+  const f = files.find((x) => x.id === id);
+  if (!f) return;
+  f.status = pct.toFixed(1) + '%';
+  f.pct = pct;
+  const el = $('drop').querySelectorAll('.row')[files.indexOf(f)];
+  if (el) {
+    el.querySelector('.fill').style.width = pct + '%';
+    el.querySelector('.status').textContent = f.status;
+  }
+});
+
+api.onOcrDone(({ file, index }) => {
+  const f = files.find((x) => x.path === file);
+  if (f) {
+    const sf = (f.subtitleFiles || []).find((s) => s.index === index);
+    if (sf) sf.needOCR = false;
+    if (selected === f.id) showDetail(f);
+  }
+});
+
+$('add').onclick = async () => addFiles(await api.pickFiles());
+
+// —— 拖放 ——
+window.addEventListener('dragover', (e) => {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+  $('drop').classList.add('over');
+});
+window.addEventListener('dragleave', (e) => {
+  if (e.relatedTarget === null) $('drop').classList.remove('over');
+});
+window.addEventListener('drop', (e) => {
+  e.preventDefault();
+  $('drop').classList.remove('over');
+  const paths = [...(e.dataTransfer?.files || [])].map((f) => api.pathOf(f)).filter(Boolean);
+  if (paths.length) addFiles(paths);
+});
+
+$('clear').onclick = () => {
+  if (running) return;
+  for (let i = files.length - 1; i >= 0; i--) if (files[i].status !== 'running') files.splice(i, 1);
+  if (selected && !files.some((f) => f.id === selected)) selected = null;
+  render();
+  if (!selected) {
+    $('detail').innerHTML = '<h3>文件信息</h3><div style="color:var(--muted)">选择一个文件查看详情</div>';
+    renderSettings();
+  }
+};
+$('outBtn').onclick = async () => {
+  const d = await api.pickDir(); outDir = d;
+  $('outBtn').textContent = '输出到：' + (d ? d.split('/').pop() : '原文件旁边');
+  $('outBtn').title = d || '';
+};
+$('cancel').onclick = () => { stopRequested = true; api.cancelConvert(); };
+
+$('advBtn').onclick = () => {
+  advOpen = !advOpen;
+  $('adv').classList.toggle('hidden', !advOpen);
+  $('advBtn').textContent = advOpen ? '收起参数 ▴' : '更多参数 ▾';
+};
+
+async function startJobs(onlySelected) {
+  if (running) return;
+  let list;
+  if (onlySelected) {
+    const f = selectedFile();
+    if (!f || !f.meta || !['video','audio','image'].includes(f.meta.kind)) {
+      alert('请先选择一个已完成解析的文件');
+      return;
+    }
+    list = [f];
+  } else {
+    list = files.filter((f) => f.meta && ['video','audio','image'].includes(f.meta.kind) && !f.done);
+  }
+  if (!list.length) return;
+
+  running = true; stopRequested = false;
+  $('start').disabled = true; $('startAll').disabled = true; $('cancel').disabled = false;
+  for (const f of list) {
+    if (stopRequested) break;
+    if (f.status === 'running' || f.done) continue;
+    const kind = f.meta.kind;
+    f.status = 'running'; f.pct = 0;
+    render();
+    let r;
+    try {
+      r = await api.convert({
+        id: f.id, input: f.path, kind,
+        settings: JSON.parse(JSON.stringify(state[kind])),
+        outDir,
+      });
+    } catch (e) {
+      r = { ok: false, error: String(e && e.message || e) };
+    }
+    if (r.ok) {
+      f.done = true; f.out = r.out; f.status = '完成 ↗'; f.pct = 100;
+    } else if (r.cancelled) {
+      f.status = null; f.pct = 0;
+    } else {
+      f.status = null; f.pct = 0; f.error = r.error;
+    }
+    render();
+    if (!r.ok && !r.cancelled) {
+      const el = $('drop').querySelectorAll('.row')[files.indexOf(f)];
+      if (el) {
+        const m = document.createElement('div');
+        m.className = 'msg'; m.textContent = r.error || '失败';
+        el.appendChild(m);
+      }
+    }
+  }
+  running = false;
+  $('cancel').disabled = true;
+  render();
+  renderSettings();
+}
+
+$('start').onclick = () => startJobs(true);
+$('startAll').onclick = () => startJobs(false);
+
+render();
+renderSettings();
+</script>
+</body>
+</html>

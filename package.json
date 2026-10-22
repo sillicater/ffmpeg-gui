@@ -1,0 +1,81 @@
+{
+  "name": "ffmpeg-gui",
+  "productName": "多媒体工具",
+  "version": "0.1.0",
+  "description": "本地多媒体转码与播放工具",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build:player": "bash player/build.sh",
+    "dist:player": "bash player/build.sh && bash player/package.sh",
+    "build:imgtool": "swiftc -O tools/imgtool.swift -o build/imgtool",
+    "dist": "bash player/build.sh && npm run build:imgtool && electron-builder --mac"
+  },
+  "devDependencies": {
+    "electron": "^33.4.11",
+    "electron-builder": "^25.1.8",
+    "ffmpeg-static": "^5.2.0"
+  },
+  "build": {
+    "appId": "local.ffmpeg-gui",
+    "files": [
+      "**/*",
+      "!player/**",
+      "!build/**"
+    ],
+    "mac": {
+      "target": "dmg",
+      "category": "public.app-category.video",
+      "icon": "build/icon.icns",
+      "extendInfo": {
+        "LSUIElement": true,
+        "CFBundleDocumentTypes": [
+          {
+            "CFBundleTypeName": "视频",
+            "CFBundleTypeRole": "Viewer",
+            "LSHandlerRank": "Alternate",
+            "LSItemContentTypes": [
+              "public.movie"
+            ]
+          },
+          {
+            "CFBundleTypeName": "音频",
+            "CFBundleTypeRole": "Viewer",
+            "LSHandlerRank": "Alternate",
+            "LSItemContentTypes": [
+              "public.audio"
+            ]
+          },
+          {
+            "CFBundleTypeName": "图片",
+            "CFBundleTypeRole": "Viewer",
+            "LSHandlerRank": "Alternate",
+            "LSItemContentTypes": [
+              "public.image"
+            ]
+          }
+        ]
+      }
+    },
+    "extraResources": [
+      {
+        "from": "player/build/Player.app",
+        "to": "player/Player.app"
+      },
+      {
+        "from": "build/imgtool",
+        "to": "imgtool"
+      }
+    ]
+  },
+  "allowScripts": {
+    "electron@33.4.11": true,
+    "ffmpeg-static@5.3.0": true
+  },
+  "license": "MIT",
+  "author": "sillicater",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sillicater/ffmpeg-gui.git"
+  }
+}

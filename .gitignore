@@ -1,0 +1,9 @@
+node_modules/
+dist/
+player/build/
+build/imgtool
+.DS_Store
+*.log
+*.dmg
+*.blockmap
+.claude/
