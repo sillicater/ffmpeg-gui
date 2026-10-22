@@ -15,6 +15,7 @@ macOS 上的本地多媒体转码与查看工具：Electron 主程序负责批�
 
 - macOS 13 或更高版本
 - Node.js 18+
+- Xcode Command Line Tools（提供 `swiftc`，编译播放器和 imgtool）
 - Homebrew：
   ```bash
   brew install ffmpeg mpv
@@ -33,6 +34,12 @@ npm install
 npm run build:player     # 编译 Swift 播放器
 npm run build:imgtool    # 编译 ImageIO 图片转换工具
 npm start                # 启动 Electron 主程序
+```
+
+Intel Mac 上编译播放器时指定 Homebrew 前缀：
+
+```bash
+MPV_PREFIX=/usr/local npm run build:player
 ```
 
 ## 打包
