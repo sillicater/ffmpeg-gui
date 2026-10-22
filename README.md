@@ -16,8 +16,8 @@ macOS 上的本地多媒体转码与查看工具：Electron 主程序负责批�
 
 从 [Releases](https://github.com/sillicater/ffmpeg-gui/releases) 下载：
 
-- `多媒体工具-0.1.0-arm64.dmg`：Electron 主程序
-- `多媒体工具播放器-1.0.0.dmg`：仅播放器
+- `MediaTool-0.1.0-arm64.dmg`：Electron 主程序
+- `MediaTool-Player-1.0.0.dmg`：仅播放器
 
 ## 环境要求
 
