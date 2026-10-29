@@ -1,6 +1,6 @@
-# 多媒体工具 (ffmpeg-gui)
+# macOS 轻量极简播放器
 
-macOS 上的本地多媒体转码与查看工具：Electron 主程序负责批量转码和元数据，Swift/libmpv 播放器负责视频、音频、图片的原生查看。
+macOS 上的轻量极简本地多媒体工具：Swift/libmpv 原生播放器负责视频、音频、图片的查看，Electron 主程序负责批量转码和元数据。
 
 ## 功能
 
@@ -15,7 +15,7 @@ macOS 上的本地多媒体转码与查看工具：Electron 主程序负责批�
 
 ## 下载
 
-从 [Releases](https://github.com/sillicater/ffmpeg-gui/releases) 下载：
+从 [Releases](https://github.com/sillicater/macos-minimal-player/releases) 下载：
 
 - `MediaTool-0.1.0-arm64.dmg`：Electron 主程序
 - `MediaTool-Player-1.0.0.dmg`：仅播放器
@@ -37,8 +37,8 @@ macOS 上的本地多媒体转码与查看工具：Electron 主程序负责批�
 ## 开发
 
 ```bash
-git clone https://github.com/sillicater/ffmpeg-gui.git
-cd ffmpeg-gui
+git clone https://github.com/sillicater/macos-minimal-player.git
+cd macos-minimal-player
 npm install
 npm run build:player     # 编译 Swift 播放器
 npm run build:imgtool    # 编译 ImageIO 图片转换工具
