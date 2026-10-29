@@ -689,6 +689,7 @@ final class Controller: NSObject, NSWindowDelegate {
   // 每个文件记住上次的播放位置和音轨/字幕轨
   var currentAid = ""
   var currentSid = ""
+  var loadedPath = ""
   var lastPersistedPosition = -1.0
   var endStateSaved = false
   // 前台播放时持有的防休眠断言
@@ -871,6 +872,7 @@ final class Controller: NSObject, NSWindowDelegate {
     positionNow = 0
     currentAid = ""
     currentSid = ""
+    loadedPath = ""
     lastPersistedPosition = -1
     endStateSaved = false
     barVisible = false
@@ -1280,6 +1282,7 @@ final class Controller: NSObject, NSWindowDelegate {
     let optArg = opts.isEmpty ? "" : " 0 " + opts.joined(separator: ",")
     currentAid = saved.aid ?? ""
     currentSid = saved.sid ?? ""
+    loadedPath = ""
     lastPersistedPosition = start
     endStateSaved = false
     mpvQ.async { [weak self] in
@@ -1303,7 +1306,10 @@ final class Controller: NSObject, NSWindowDelegate {
 
   // 记下当前时间与轨道；windowWillClose / 退出时 flush，播放中每 10 秒落一次盘
   func savePlaybackState(flush: Bool = false) {
-    guard hasStarted, session.image != true, !session.file.isEmpty else { return }
+    // 换文件时 mpv 还在放旧文件，若此时写入会把旧进度记到新文件上；
+    // 只有 mpv 实际加载的路径和当前 session 一致才允许保存。
+    guard hasStarted, session.image != true, !session.file.isEmpty,
+          loadedPath == session.file else { return }
     let atEnd = duration > 0 && positionNow >= duration - 5
     let time = atEnd ? 0 : max(0, positionNow)
     let d = UserDefaults.standard
@@ -1395,10 +1401,12 @@ final class Controller: NSObject, NSWindowDelegate {
       let chapters = prop(h, "chapter-list") ?? ""
       let aid = prop(h, "aid") ?? ""
       let sid = prop(h, "sid") ?? ""
+      let path = prop(h, "path") ?? ""
       let eof = propBool(h, "eof-reached")
       DispatchQueue.main.async {
         self.applyUI(pos: pos, duration: dur, paused: paused, volume: vol,
-                     tracks: tracks, chapters: chapters, aid: aid, sid: sid, eof: eof)
+                     tracks: tracks, chapters: chapters, aid: aid, sid: sid,
+                     path: path, eof: eof)
       }
     }
     t.resume()
@@ -1407,20 +1415,24 @@ final class Controller: NSObject, NSWindowDelegate {
 
   // 主线程：只碰界面，不碰 mpv
   func applyUI(pos: Double, duration: Double, paused: Bool, volume: Double,
-               tracks: String, chapters: String, aid: String, sid: String, eof: Bool) {
+               tracks: String, chapters: String, aid: String, sid: String,
+               path: String, eof: Bool) {
     self.duration = duration
     self.positionNow = pos
     self.pausedNow = paused
+    loadedPath = path
     if !aid.isEmpty { currentAid = aid }
     if !sid.isEmpty { currentSid = sid }
-    // keep-open 卡在片尾时不一定发 end-file，这里补一次：下次从头播
-    if eof {
+    let isCurrentFile = !loadedPath.isEmpty && loadedPath == session.file
+    // keep-open 卡在片尾时不一定发 end-file，这里补一次：下次从头播。
+    // 换文件过渡期 mpv 的 eof 还属于旧文件，必须等路径切到当前文件。
+    if isCurrentFile, eof {
       if !endStateSaved {
         endStateSaved = true
         positionNow = duration
         savePlaybackState(flush: true)
       }
-    } else {
+    } else if isCurrentFile {
       endStateSaved = false
     }
     playBtn.title = paused ? "▶" : "❚❚"
@@ -1433,8 +1445,8 @@ final class Controller: NSObject, NSWindowDelegate {
     if tracks != lastTracksJSON { lastTracksJSON = tracks; rebuildTrackMenus(tracks) }
     if chapters != lastChaptersJSON { lastChaptersJSON = chapters; rebuildChapterMenu(chapters); rebuildMenuBar() }
     // 播放中每 10 秒记一次，意外退出也不会丢太多进度；结尾附近不记，避免下次一打开就结束
-    if hasStarted, session.image != true, duration > 0, pos > 0, pos < duration - 5,
-       abs(pos - lastPersistedPosition) >= 10 {
+    if isCurrentFile, hasStarted, session.image != true, duration > 0, pos > 0,
+       pos < duration - 5, abs(pos - lastPersistedPosition) >= 10 {
       savePlaybackState()
     }
     updateSleepAssertion()
