@@ -686,6 +686,11 @@ final class Controller: NSObject, NSWindowDelegate {
   var pollMs = 250
   var pausedNow = false
   var positionNow = 0.0
+  // 每个文件记住上次的播放位置和音轨/字幕轨
+  var currentAid = ""
+  var currentSid = ""
+  var lastPersistedPosition = -1.0
+  var endStateSaved = false
   // 前台播放时持有的防休眠断言
   var sleepActivity: NSObjectProtocol?
   // 全屏时自动隐藏鼠标
@@ -855,6 +860,7 @@ final class Controller: NSObject, NSWindowDelegate {
       NSApp.activate(ignoringOtherApps: true)
       return
     }
+    savePlaybackState(flush: true)
     session = s
     window.title = s.title
     duration = 0
@@ -863,6 +869,10 @@ final class Controller: NSObject, NSWindowDelegate {
     autoPaused = false
     pausedNow = false
     positionNow = 0
+    currentAid = ""
+    currentSid = ""
+    lastPersistedPosition = -1
+    endStateSaved = false
     barVisible = false
     hideWork?.cancel()
     updateSleepAssertion()
@@ -954,8 +964,6 @@ final class Controller: NSObject, NSWindowDelegate {
     let prim = mpvTargetPrimaries()
     mpvQ.async { [weak self] in
       guard let self, let h = self.h else { return }
-      sh_set_prop(h, "sid", "auto")
-      sh_set_prop(h, "aid", "auto")
       sh_set_prop(h, "sub-delay", "0")
       sh_set_prop(h, "pause", "no")
       if hdr {
@@ -1259,13 +1267,52 @@ final class Controller: NSObject, NSWindowDelegate {
     guard hasStarted else { return }
     let file = session.file
     let subs = session.subtitles ?? []
+    let saved = savedPlaybackState(for: file)
+    let start = (saved.time.isFinite && saved.time > 1) ? saved.time : 0
+    // loadfile 的第 3 个参数是插入位置，第 4 个才是 per-file 选项；
+    // 要写成：loadfile "file" replace 0 start=<秒>,aid=<id>,sid=<id>
+    // 轨道选择必须作为 per-file 选项一起加载，不能在 loadfile 之后立刻 set：
+    // 那时旧文件还在播，set aid/sid 会落到旧文件上，新文件仍是默认轨。
+    var opts: [String] = []
+    if start > 1 { opts.append("start=\(start)") }
+    if let aid = saved.aid, !aid.isEmpty, aid != "auto" { opts.append("aid=\(aid)") }
+    if let sid = saved.sid, !sid.isEmpty, sid != "auto" { opts.append("sid=\(sid)") }
+    let optArg = opts.isEmpty ? "" : " 0 " + opts.joined(separator: ",")
+    currentAid = saved.aid ?? ""
+    currentSid = saved.sid ?? ""
+    lastPersistedPosition = start
+    endStateSaved = false
     mpvQ.async { [weak self] in
       guard let self, let h = self.h else { return }
-      sh_command(h, "loadfile \(self.quote(file))")
+      sh_command(h, "loadfile \(self.quote(file)) replace\(optArg)")
       for (i, sub) in subs.enumerated() {
         sh_command(h, "sub-add \(self.quote(sub)) \(i == 0 ? "select" : "auto")")
       }
     }
+  }
+
+  // ---------- 播放记忆 ----------
+  private func stateKey(_ prefix: String, _ file: String) -> String { "\(prefix):\(file)" }
+
+  private func savedPlaybackState(for file: String) -> (time: Double, aid: String?, sid: String?) {
+    let d = UserDefaults.standard
+    return (d.double(forKey: stateKey("resumeTime", file)),
+            d.string(forKey: stateKey("aid", file)),
+            d.string(forKey: stateKey("sid", file)))
+  }
+
+  // 记下当前时间与轨道；windowWillClose / 退出时 flush，播放中每 10 秒落一次盘
+  func savePlaybackState(flush: Bool = false) {
+    guard hasStarted, session.image != true, !session.file.isEmpty else { return }
+    let atEnd = duration > 0 && positionNow >= duration - 5
+    let time = atEnd ? 0 : max(0, positionNow)
+    let d = UserDefaults.standard
+    let file = session.file
+    d.set(time, forKey: stateKey("resumeTime", file))
+    if !currentAid.isEmpty { d.set(currentAid, forKey: stateKey("aid", file)) }
+    if !currentSid.isEmpty { d.set(currentSid, forKey: stateKey("sid", file)) }
+    if flush { d.synchronize() }
+    lastPersistedPosition = time
   }
 
   // 由画布图层调用（此时 GL 上下文已 current）
@@ -1316,7 +1363,13 @@ final class Controller: NSObject, NSWindowDelegate {
 
   func handleEndFile(_ reason: Int32) {
     if reason == 0 {
-      DispatchQueue.main.async { self.playBtn?.title = "▶" }
+      DispatchQueue.main.async {
+        self.playBtn?.title = "▶"
+        // 看到结尾后下次从头播，不要一打开就停在片尾
+        self.positionNow = self.duration
+        self.endStateSaved = true
+        self.savePlaybackState(flush: true)
+      }
     }
   }
 
@@ -1340,8 +1393,12 @@ final class Controller: NSObject, NSWindowDelegate {
       let vol = propDouble(h, "volume")
       let tracks = prop(h, "track-list") ?? ""
       let chapters = prop(h, "chapter-list") ?? ""
+      let aid = prop(h, "aid") ?? ""
+      let sid = prop(h, "sid") ?? ""
+      let eof = propBool(h, "eof-reached")
       DispatchQueue.main.async {
-        self.applyUI(pos: pos, duration: dur, paused: paused, volume: vol, tracks: tracks, chapters: chapters)
+        self.applyUI(pos: pos, duration: dur, paused: paused, volume: vol,
+                     tracks: tracks, chapters: chapters, aid: aid, sid: sid, eof: eof)
       }
     }
     t.resume()
@@ -1349,10 +1406,23 @@ final class Controller: NSObject, NSWindowDelegate {
   }
 
   // 主线程：只碰界面，不碰 mpv
-  func applyUI(pos: Double, duration: Double, paused: Bool, volume: Double, tracks: String, chapters: String) {
+  func applyUI(pos: Double, duration: Double, paused: Bool, volume: Double,
+               tracks: String, chapters: String, aid: String, sid: String, eof: Bool) {
     self.duration = duration
     self.positionNow = pos
     self.pausedNow = paused
+    if !aid.isEmpty { currentAid = aid }
+    if !sid.isEmpty { currentSid = sid }
+    // keep-open 卡在片尾时不一定发 end-file，这里补一次：下次从头播
+    if eof {
+      if !endStateSaved {
+        endStateSaved = true
+        positionNow = duration
+        savePlaybackState(flush: true)
+      }
+    } else {
+      endStateSaved = false
+    }
     playBtn.title = paused ? "▶" : "❚❚"
     if !dragging {
       slider.maxValue = max(1, duration)
@@ -1362,6 +1432,11 @@ final class Controller: NSObject, NSWindowDelegate {
     if !volSlider.isHighlighted { volSlider.doubleValue = volume }
     if tracks != lastTracksJSON { lastTracksJSON = tracks; rebuildTrackMenus(tracks) }
     if chapters != lastChaptersJSON { lastChaptersJSON = chapters; rebuildChapterMenu(chapters); rebuildMenuBar() }
+    // 播放中每 10 秒记一次，意外退出也不会丢太多进度；结尾附近不记，避免下次一打开就结束
+    if hasStarted, session.image != true, duration > 0, pos > 0, pos < duration - 5,
+       abs(pos - lastPersistedPosition) >= 10 {
+      savePlaybackState()
+    }
     updateSleepAssertion()
   }
 
@@ -1420,6 +1495,12 @@ final class Controller: NSObject, NSWindowDelegate {
   }
   @objc func subCycle() { mpv { h in sh_command(h, "cycle sub") } }
   @objc func audioCycle() { mpv { h in sh_command(h, "cycle audio") } }
+  @objc func disableSubtitles() {
+    currentSid = "no"
+    savePlaybackState(flush: true)
+    mpv { h in sh_set_prop(h, "sid", "no") }
+    flash("字幕已关闭")
+  }
   @objc func subScaleUp() { stepSubSize(4) }
   @objc func subScaleDown() { stepSubSize(-4) }
   func stepSubSize(_ delta: Double) {
@@ -1444,18 +1525,26 @@ final class Controller: NSObject, NSWindowDelegate {
   }
   @objc func pickSub(_ item: NSMenuItem) {
     let id = item.representedObject as? String ?? "auto"
+    currentSid = id
+    savePlaybackState(flush: true)
     mpv { h in sh_set_prop(h, "sid", id) }
   }
   @objc func pickAudio(_ item: NSMenuItem) {
     let id = item.representedObject as? String ?? "auto"
+    currentAid = id
+    savePlaybackState(flush: true)
     mpv { h in sh_set_prop(h, "aid", id) }
   }
   @objc func pickPopupSub(_ sender: NSPopUpButton) {
     let id = sender.selectedItem?.representedObject as? String ?? "auto"
+    currentSid = id
+    savePlaybackState(flush: true)
     mpv { h in sh_set_prop(h, "sid", id) }
   }
   @objc func pickPopupAudio(_ sender: NSPopUpButton) {
     let id = sender.selectedItem?.representedObject as? String ?? "auto"
+    currentAid = id
+    savePlaybackState(flush: true)
     mpv { h in sh_set_prop(h, "aid", id) }
   }
   func flash(_ text: String) {
@@ -1479,6 +1568,19 @@ final class Controller: NSObject, NSWindowDelegate {
     appMenu.addItem(withTitle: "关闭播放器", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
     appItem.submenu = appMenu
 
+    let pItem = NSMenuItem(); main.addItem(pItem); pItem.submenu = playMenu
+    add(playMenu, "播放 / 暂停", #selector(togglePlay), " ", [])
+    add(playMenu, "后退 10 秒", #selector(back10), String(UnicodeScalar(NSLeftArrowFunctionKey)!), [])
+    add(playMenu, "前进 10 秒", #selector(fwd10), String(UnicodeScalar(NSRightArrowFunctionKey)!), [])
+    add(playMenu, "全屏", #selector(fullscreen), "f", [.command, .control])
+    playMenu.addItem(.separator())
+    let audioHolder = NSMenuItem(title: "音轨", action: nil, keyEquivalent: "")
+    audioHolder.submenu = audioMenu
+    playMenu.addItem(audioHolder)
+    let subHolder = NSMenuItem(title: "字幕", action: nil, keyEquivalent: "")
+    subHolder.submenu = subMenu
+    playMenu.addItem(subHolder)
+
     let fItem = NSMenuItem(); main.addItem(fItem)
     let fileMenu = NSMenu(title: "文件")
     let openItem = NSMenuItem(title: "打开…", action: #selector(openDocument), keyEquivalent: "o")
@@ -1490,14 +1592,6 @@ final class Controller: NSObject, NSWindowDelegate {
     fileMenu.addItem(defItem)
     fItem.submenu = fileMenu
 
-    let pItem = NSMenuItem(); main.addItem(pItem); pItem.submenu = playMenu
-    add(playMenu, "播放 / 暂停", #selector(togglePlay), " ", [])
-    add(playMenu, "后退 10 秒", #selector(back10), String(UnicodeScalar(NSLeftArrowFunctionKey)!), [])
-    add(playMenu, "前进 10 秒", #selector(fwd10), String(UnicodeScalar(NSRightArrowFunctionKey)!), [])
-    add(playMenu, "全屏", #selector(fullscreen), "f", [.command, .control])
-
-    let sItem = NSMenuItem(); main.addItem(sItem); sItem.submenu = subMenu
-    let aItem = NSMenuItem(); main.addItem(aItem); aItem.submenu = audioMenu
     let cItem = NSMenuItem(); main.addItem(cItem); cItem.submenu = chapterMenu
 
     let wItem = NSMenuItem(); main.addItem(wItem)
@@ -1520,7 +1614,7 @@ final class Controller: NSObject, NSWindowDelegate {
 
   func rebuildActionMenus() {
     subMenu.removeAllItems()
-    add(subMenu, "关闭字幕", #selector(subCycle), "", [])
+    add(subMenu, "关闭字幕", #selector(disableSubtitles), "", [])
     subMenu.addItem(.separator())
     add(subMenu, "字号变大", #selector(subScaleUp), "=", [.command])
     add(subMenu, "字号变小", #selector(subScaleDown), "-", [.command])
@@ -1541,7 +1635,7 @@ final class Controller: NSObject, NSWindowDelegate {
     guard let data = json.data(using: .utf8),
           let arr = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] else { return }
     subMenu.removeAllItems()
-    add(subMenu, "关闭字幕", #selector(subCycle), "", [])
+    add(subMenu, "关闭字幕", #selector(disableSubtitles), "", [])
     subMenu.addItem(.separator())
     add(subMenu, "字号变大", #selector(subScaleUp), "=", [.command])
     add(subMenu, "字号变小", #selector(subScaleDown), "-", [.command])
@@ -1554,6 +1648,8 @@ final class Controller: NSObject, NSWindowDelegate {
     audioMenu.removeAllItems()
     let audPop = NSMenu()
     audPop.addItem(withTitle: "默认", action: nil, keyEquivalent: "")
+    var subCount = 0
+    var audioCount = 0
 
     for t in arr {
       let type = t["type"] as? String ?? ""
@@ -1571,19 +1667,33 @@ final class Controller: NSObject, NSWindowDelegate {
       item.state = selected ? .on : .off
       if type == "sub" {
         subMenu.addItem(item)
+        subCount += 1
         let p = NSMenuItem(title: label, action: nil, keyEquivalent: "")
         p.representedObject = String(id)
         subPop.addItem(p)
       } else if type == "audio" {
+        let ch = t["demux-channel-count"] as? Int ?? 0
+        if ch > 0 { label += " · \(ch) 声道" }
         let a = NSMenuItem(title: label, action: #selector(pickAudio(_:)), keyEquivalent: "")
         a.target = self
         a.representedObject = String(id)
         a.state = selected ? .on : .off
         audioMenu.addItem(a)
+        audioCount += 1
         let p = NSMenuItem(title: label, action: nil, keyEquivalent: "")
         p.representedObject = String(id)
         audPop.addItem(p)
       }
+    }
+    if subCount == 0 {
+      let none = NSMenuItem(title: "（无字幕轨）", action: nil, keyEquivalent: "")
+      none.isEnabled = false
+      subMenu.addItem(none)
+    }
+    if audioCount == 0 {
+      let none = NSMenuItem(title: "（无音轨）", action: nil, keyEquivalent: "")
+      none.isEnabled = false
+      audioMenu.addItem(none)
     }
     if !subPopup.isHidden {
       subPopup.menu = subPop
@@ -1622,6 +1732,7 @@ final class Controller: NSObject, NSWindowDelegate {
   }
 
   func windowWillClose(_ notification: Notification) {
+    savePlaybackState(flush: true)
     timer?.cancel()
     showCursorNow()
     endSleepActivity()
@@ -1702,6 +1813,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   func applicationShouldTerminateAfterLastWindowClosed(_ a: NSApplication) -> Bool { true }
+
+  func applicationWillTerminate(_ n: Notification) {
+    player?.savePlaybackState(flush: true)
+  }
 
   // 同一个文件只前置窗口；新文件在同一窗口里切换
   private func showOrOpen(_ url: URL) {
